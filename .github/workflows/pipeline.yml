@@ -1,0 +1,49 @@
+name: Weather Pipeline - Bronze Layer
+
+on:
+  # Ejecuta automáticamente todos los días a las 06:00 UTC (02:00 hora Bolivia)
+  schedule:
+    - cron: "0 6 * * *"
+
+  # También permite ejecutarlo manualmente desde GitHub
+  workflow_dispatch:
+
+jobs:
+  extract-and-load:
+    name: Extraer clima y subir a GCS
+    runs-on: ubuntu-latest
+
+    env:
+      OUTPUT_DIR: ./output
+      PAST_DAYS: "2"
+      FORECAST_DAYS: "1"
+      GCS_BUCKET_NAME: mci506-weather-bronze
+
+    steps:
+      # 1. Descarga el código del repositorio
+      - name: Checkout del repositorio
+        uses: actions/checkout@v4
+
+      # 2. Configura Python 3.11
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 3. Instala las dependencias del proyecto
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # 4. Autentica con Google Cloud usando el secret GCP_SA_KEY
+      - name: Autenticar con Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      # 5. Ejecuta la extracción desde Open-Meteo
+      - name: Ejecutar extracción (extract.py)
+        run: python extract.py
+
+      # 6. Sube los archivos NDJSON al bucket de GCS
+      - name: Subir a GCS (load.py)
+        run: python load.py
