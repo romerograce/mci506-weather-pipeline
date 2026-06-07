@@ -168,7 +168,16 @@ def write_ndjson(rows: list[dict[str, Any]], output_dir: str, run_ts: datetime) 
 
 
 def main() -> None:
-    """Orquesta la extracción: recorre las ciudades, aplana y guarda a NDJSON."""
+    """Orquesta la extracción de datos climatológicos.
+    
+    1. Lee variables de entorno para configuración.
+    2. Abre una sesión HTTP optimizada.
+    3. Recorre las ciudades configuradas y extrae sus datos.
+    4. Aplana la respuesta y la guarda particionada en formato NDJSON.
+    
+    Raises:
+        SystemExit: Si la extracción falla para absolutamente todas las ciudades.
+    """
     output_dir = os.getenv("OUTPUT_DIR", "./output")
     past_days = int(os.getenv("PAST_DAYS", "2"))
     forecast_days = int(os.getenv("FORECAST_DAYS", "1"))
@@ -179,15 +188,18 @@ def main() -> None:
     all_rows: list[dict[str, Any]] = []
     failures = 0
 
-    for city in CITIES:
-        try:
-            payload = fetch_city(city, past_days, forecast_days)
-            rows = parse_hourly_response(payload, city, extracted_at)
-            all_rows.extend(rows)
-            logger.info("OK %-14s -> %d filas", city["city"], len(rows))
-        except Exception as exc:  # noqa: BLE001 - queremos seguir con las demás ciudades
-            failures += 1
-            logger.error("Se omite %s por error: %s", city["city"], exc)
+    # OPTIMIZACIÓN: Apertura de sesión HTTP única para todas las peticiones
+    with requests.Session() as session:
+        for city in CITIES:
+            try:
+                # Se pasa la sesión a la función fetch_city
+                payload = fetch_city(session, city, past_days, forecast_days)
+                rows = parse_hourly_response(payload, city, extracted_at)
+                all_rows.extend(rows)
+                logger.info("OK %-14s -> %d filas", city["city"], len(rows))
+            except Exception as exc:  # noqa: BLE001 - queremos seguir con las demás ciudades
+                failures += 1
+                logger.error("Se omite %s por error: %s", city["city"], exc)
 
     if not all_rows:
         raise SystemExit("No se extrajo ninguna fila. Abortando.")
@@ -197,7 +209,6 @@ def main() -> None:
         "Listo: %d filas de %d ciudades (%d con error) -> %s",
         len(all_rows), len(CITIES) - failures, failures, output_path,
     )
-
 
 if __name__ == "__main__":
     main()
