@@ -37,11 +37,15 @@ CITIES: list[dict[str, Any]] = [
     {"city": "Santiago", "country": "CL", "latitude": -33.45, "longitude": -70.67},
     {"city": "Bogota", "country": "CO", "latitude": 4.71, "longitude": -74.07},
     {"city": "Madrid", "country": "ES", "latitude": 40.42, "longitude": -3.70},
+    # --- Nuevas ciudades agregadas ---
+    {"city": "Quito", "country": "EC", "latitude": -0.22, "longitude": -78.52},
+    {"city": "Asuncion", "country": "PY", "latitude": -25.28, "longitude": -57.63},
+    {"city": "Montevideo", "country": "UY", "latitude": -34.90, "longitude": -56.16},
 ]
 
 REQUEST_TIMEOUT = 30          # segundos
-MAX_RETRIES = 3               # reintentos por ciudad ante fallos transitorios
-RETRY_BACKOFF = 2            # segundos base para el backoff exponencial
+MAX_RETRIES = 5               # AUMENTADO: de 3 a 5 reintentos para mayor resiliencia
+RETRY_BACKOFF = 2             # segundos base para el backoff exponencial
 
 logging.basicConfig(
     level=logging.INFO,
