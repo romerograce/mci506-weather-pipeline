@@ -37,14 +37,14 @@ CITIES: list[dict[str, Any]] = [
     {"city": "Santiago", "country": "CL", "latitude": -33.45, "longitude": -70.67},
     {"city": "Bogota", "country": "CO", "latitude": 4.71, "longitude": -74.07},
     {"city": "Madrid", "country": "ES", "latitude": 40.42, "longitude": -3.70},
-    # --- Nuevas ciudades agregadas ---
+    # Ciudades agregadas por el equipo
     {"city": "Quito", "country": "EC", "latitude": -0.22, "longitude": -78.52},
     {"city": "Asuncion", "country": "PY", "latitude": -25.28, "longitude": -57.63},
     {"city": "Montevideo", "country": "UY", "latitude": -34.90, "longitude": -56.16},
 ]
 
 REQUEST_TIMEOUT = 30          # segundos
-MAX_RETRIES = 5               # AUMENTADO: de 3 a 5 reintentos para mayor resiliencia
+MAX_RETRIES = 5               # reintentos por ciudad ante fallos transitorios
 RETRY_BACKOFF = 2             # segundos base para el backoff exponencial
 
 logging.basicConfig(
@@ -58,12 +58,19 @@ logger = logging.getLogger("extract")
 # Funciones
 # --------------------------------------------------------------------------- #
 
-def fetch_city(city: dict[str, Any], past_days: int, forecast_days: int) -> dict[str, Any]:
+def fetch_city(
+    session: requests.Session,
+    city: dict[str, Any],
+    past_days: int,
+    forecast_days: int,
+) -> dict[str, Any]:
     """Llama a la API de Open-Meteo para una ciudad y devuelve el JSON crudo.
 
+    Usa una sesión HTTP compartida para reutilizar la conexión entre ciudades.
     Reintenta ante errores de red o respuestas 5xx usando backoff exponencial.
 
     Args:
+        session: sesión HTTP reutilizable de requests.
         city: diccionario con claves city, country, latitude, longitude.
         past_days: cuántos días hacia atrás incluir.
         forecast_days: cuántos días de pronóstico incluir.
@@ -86,7 +93,7 @@ def fetch_city(city: dict[str, Any], past_days: int, forecast_days: int) -> dict
     last_error: Exception | None = None
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            resp = requests.get(API_URL, params=params, timeout=REQUEST_TIMEOUT)
+            resp = session.get(API_URL, params=params, timeout=REQUEST_TIMEOUT)
             resp.raise_for_status()
             payload = resp.json()
             if payload.get("error"):
@@ -173,14 +180,14 @@ def write_ndjson(rows: list[dict[str, Any]], output_dir: str, run_ts: datetime) 
 
 def main() -> None:
     """Orquesta la extracción de datos climatológicos.
-    
+
     1. Lee variables de entorno para configuración.
-    2. Abre una sesión HTTP optimizada.
+    2. Abre una sesión HTTP optimizada para reutilizar la conexión.
     3. Recorre las ciudades configuradas y extrae sus datos.
     4. Aplana la respuesta y la guarda particionada en formato NDJSON.
-    
+
     Raises:
-        SystemExit: Si la extracción falla para absolutamente todas las ciudades.
+        SystemExit: si la extracción falla para absolutamente todas las ciudades.
     """
     output_dir = os.getenv("OUTPUT_DIR", "./output")
     past_days = int(os.getenv("PAST_DAYS", "2"))
@@ -192,11 +199,11 @@ def main() -> None:
     all_rows: list[dict[str, Any]] = []
     failures = 0
 
-    # OPTIMIZACIÓN: Apertura de sesión HTTP única para todas las peticiones
+    # Sesión HTTP única para todas las peticiones — más eficiente que abrir
+    # una conexión nueva por cada ciudad
     with requests.Session() as session:
         for city in CITIES:
             try:
-                # Se pasa la sesión a la función fetch_city
                 payload = fetch_city(session, city, past_days, forecast_days)
                 rows = parse_hourly_response(payload, city, extracted_at)
                 all_rows.extend(rows)
@@ -213,6 +220,7 @@ def main() -> None:
         "Listo: %d filas de %d ciudades (%d con error) -> %s",
         len(all_rows), len(CITIES) - failures, failures, output_path,
     )
+
 
 if __name__ == "__main__":
     main()
